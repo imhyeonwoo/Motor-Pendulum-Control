@@ -1,0 +1,13 @@
+# MATLAB/Simulink 임시파일
+*.asv
+*.m~ 
+*~
+*.autosave
+*.slxc
+*.mex*
+slprj/
+.svn/
+
+# 기타
+.DS_Store
+Thumbs.db
