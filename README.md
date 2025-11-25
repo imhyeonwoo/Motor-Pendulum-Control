@@ -99,7 +99,7 @@ Main cases:
 
 This project uses a linearized state-space model defined in `init_rotary_pendulum.m`.  
 Let the state be $x = [\theta,\ \dot\theta,\ \alpha,\ \dot\alpha]^\mathsf{T}$,  
-the input $u = V_m$, 출력 $y = [\theta,\ \alpha]^\mathsf{T}$. Then
+the input $u = V_m$, output $y = [\theta,\ \alpha]^\mathsf{T}$. Then
 
 $$
 \dot{x} = A x + B u,\qquad y = C x + D u
@@ -176,8 +176,8 @@ The folder `matlab/results/RotaryPendulum` contains the response plots for the a
 1. Start MATLAB and Simulink.
 2. Set this repository as the current MATLAB working folder.
 3. Initialize parameters:  
-   - DC motor: run `init_dc_motor.m`  
-   - Rotary pendulum: run `init_rotary_pendulum.m`
+   - DC motor : run `init_dc_motor.m`  
+   - Rotary pendulum : run `init_rotary_pendulum.m`
 4. Open the desired `.slx` model and run the simulation.
 5. Check the simulation results under the corresponding subfolders in `matlab/results`.
 
