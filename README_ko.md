@@ -1,9 +1,9 @@
 ## Motor-Pendulum-Control
 
-Source code for learning DC motor position control and rotary inverted pendulum control using MATLAB/Simulink.
+MATLAB/Simulink 기반 DC 모터 위치 제어와 Rotary Inverted Pendulum 제어 실습용 저장소입니다.  
 
 ---
-## 0. Project Structure
+## 0. Project 구조
 
 ```text
 Motor-Pendulum-Control/
@@ -44,15 +44,15 @@ Motor-Pendulum-Control/
 
 ---
 
-## 1. DC Motor Position Control (P/PI/PD/PID)
+## 1. DC 모터 위치 제어 (P/PI/PD/PID)
 
-- Model files: `matlab/models/DCmotor_PID.slx`, `matlab/models/MotorPD_simonly.slx`
-- Parameter script: `matlab/scripts/init_dc_motor.m`
+- 모델 파일: `matlab/models/DCmotor_PID.slx`, `matlab/models/MotorPD_simonly.slx`
+- 파라미터 스크립트: `matlab/scripts/init_dc_motor.m`
 
-### System Model
+### System model
 
-Using the parameters $K$ and $\tau$ defined in `init_dc_motor.m`,  
-the first-order system from input voltage $u(t)$ to motor angular velocity $\omega(t)$ is
+`init_dc_motor.m`에서 사용한 파라미터 $K$, $\tau$를 이용하면,  
+입력 전압 $u(t)$ → 모터 각속도 $\omega(t)$에 대한 1차 시스템은
 
 $$
 \tau \frac{d\omega(t)}{dt} + \omega(t) = K\,u(t)
@@ -62,50 +62,50 @@ $$
 \frac{\Omega(s)}{U(s)} = \frac{K}{\tau s + 1}
 $$
 
-To obtain motor position \(\theta(t)\) as the output, add an integrator, giving
+출력을 모터 위치 $\theta(t)$로 잡으면 적분기가 한 번 더 붙어
 
 $$
 \frac{\Theta(s)}{U(s)} = \frac{K}{s(\tau s + 1)}
 $$
 
-### Simulink Model
+### Simulink 모델
 
 ![DC motor PID Simulink model](docs/DCmotor_pid_simulink.png)
 
-The controller and plant are implemented in a single Simulink model using standard blocks.
+필요에 따라 함수 블록을 사용하지 않은 모델도 함께 포함되어 있습니다.
 
 ![DC motor PID (no function) model](docs/DCmotor_PID_withoutFunction.png)
 
-### Simulation Results (PID Control)
+### 대표 결과 (PID 제어)
 
-P/PI/PD/PID control results are stored in the `matlab/results` folder.  
-The figure below shows an example of the final response with PID control:
+`matlab/results` 아래에 P/PI/PD/PID 제어 결과가 정리되어 있으며,  
+아래 그림은 PID 제어의 최종 응답 예시입니다.
 
 ![DC motor PID final response](matlab/results/DC_PID_Final.png)
 
-Main cases:
-- `matlab/results/DC_P_Control`: responses for different proportional gains $K_p$
-- `matlab/results/DC_PI_Control`: stable/unstable cases for different integral gains $K_i$
-- `matlab/results/DC_PD_Control`: several PD parameter cases
+세부 케이스:
+- `matlab/results/DC_P_Control` – 비례 이득($K_p$) 변화에 따른 응답
+- `matlab/results/DC_PI_Control` – 적분 이득($K_i$) 변화 및 불안정 케이스
+- `matlab/results/DC_PD_Control` – 여러 PD 파라미터 케이스
 
 ---
 
-## 2. Rotary Inverted Pendulum Control
+## 2. Rotary Inverted Pendulum 제어
 
-- Model file: `matlab/models/InvertedPendulum_simonly.slx`
-- Parameter script: `matlab/scripts/init_rotary_pendulum.m`
+- 모델 파일: `matlab/models/InvertedPendulum_simonly.slx`
+- 파라미터 스크립트: `matlab/scripts/init_rotary_pendulum.m`
 
-### System Model
+### System model
 
-This project uses a linearized state-space model defined in `init_rotary_pendulum.m`.  
-Let the state be $x = [\theta,\ \dot\theta,\ \alpha,\ \dot\alpha]^\mathsf{T}$,  
-the input $u = V_m$, 출력 $y = [\theta,\ \alpha]^\mathsf{T}$. Then
+`init_rotary_pendulum.m`에서 정의한 선형 모델은  
+상태 $x = [\theta,\ \dot\theta,\ \alpha,\ \dot\alpha]^\mathsf{T}$,  
+입력 $u = V_m$, 출력 $y = [\theta,\ \alpha]^\mathsf{T}$에 대해
 
 $$
 \dot{x} = A x + B u,\qquad y = C x + D u
 $$
 
-where
+편의 파라미터는
 
 $$
 J_\mathrm{eq} = m_p L_r^2 + J_r,\qquad
@@ -123,7 +123,7 @@ $$
 \Delta = J_\mathrm{eq} J_{p,\mathrm{eq}} - c^2
 $$
 
-The state-space matrices are
+상태공간 행렬은
 
 $$
 A =
@@ -157,28 +157,28 @@ D =
 \end{bmatrix}.
 $$
 
-### Simulink Model and Controller Structure
+### Simulink 모델 및 제어 구조
 
 ![Rotary pendulum Simulink model](docs/RotaryPendulum_simulink.png)
 
 ![Rotary pendulum state-space controller](docs/RotaryPendulum_StateSpaceController.png)
 
-### Simulation Results
+### 대표 결과
 
-The folder `matlab/results/RotaryPendulum` contains the response plots for the angles.
+`matlab/results/RotaryPendulum` 디렉터리에 각도 응답 결과가 저장되어 있습니다.
 
 ![Rotary pendulum theta response](matlab/results/RotaryPendulum/theta_result.png)
 
 ---
 
-## How to Use (Quick Summary)
+## 사용 방법 (간단 요약)
 
-1. Start MATLAB and Simulink.
-2. Set this repository as the current MATLAB working folder.
-3. Initialize parameters:  
-   - DC motor: run `init_dc_motor.m`  
-   - Rotary pendulum: run `init_rotary_pendulum.m`
-4. Open the desired `.slx` model and run the simulation.
-5. Check the simulation results under the corresponding subfolders in `matlab/results`.
+1. MATLAB 및 Simulink 실행
+2. 이 저장소를 MATLAB 현재 폴더로 설정
+3. 파라미터 초기화
+   - DC 모터: `init_dc_motor.m` 실행
+   - Rotary Pendulum: `init_rotary_pendulum.m` 실행
+4. 원하는 모델(`.slx`)을 열고 시뮬레이션 실행
+5. 시뮬레이션 결과는 `matlab/results` 하위 폴더에 이미지로 저장
 
 ---
