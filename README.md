@@ -62,7 +62,7 @@ $$
 \frac{\Omega(s)}{U(s)} = \frac{K}{\tau s + 1}
 $$
 
-To obtain motor position \(\theta(t)\) as the output, add an integrator, giving
+To obtain motor position $\theta(t)$ as the output, add an integrator, giving
 
 $$
 \frac{\Theta(s)}{U(s)} = \frac{K}{s(\tau s + 1)}
