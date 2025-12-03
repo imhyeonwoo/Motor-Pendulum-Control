@@ -1,20 +1,20 @@
 %% 1. 실험 데이터 로드 (Load Experiment Data)
-base_dir = 'C:\Users\User\Desktop\Git\Motor-Pendulum-Control/4조 data/P,PI,PD test';
-%file_name = 'p2.mat';
+base_dir = 'C:\Users\User\Desktop\Git\Motor-Pendulum-Control/4조 data/PID';
+file_name = 'p2.mat';
 %file_name = 'p0.366.mat';
 %file_name = 'p1i0.5.mat';
 %file_name = 'p1i1.mat';
 %file_name = 'p1d0.1.mat';
-file_name = 'p1d0.05.mat';
+%file_name = 'p1d0.05.mat';
 %file_name = 'p0.5d0.1.mat';
 data_path = fullfile(base_dir, file_name);
 
 clc;
 
 % --- P 제어기 이득 (실험 파일에 맞게 설정) ---
-Kp = 1;           % p2.mat → 2, p0.366.mat 쓰면 0.366 으로 바꿔줘
+Kp = 2;           % p2.mat → 2, p0.366.mat 쓰면 0.366 으로 바꿔줘
 Ki = 0;         
-Kd = 0.05;
+Kd = 0;
 
 if isfile(data_path)
     raw_data = load(data_path); % 데이터를 구조체로 로드
@@ -152,9 +152,9 @@ grid on;
 legend([h1 h2 h3], 'Location', 'best');
 xlabel('Time [s]');
 ylabel('Angle [deg]');
-% title(sprintf('P Control Response Comparison (Kp=%.3g)', Kp));
+title(sprintf('P Control Response Comparison (Kp=%.3g)', Kp));
 % title(sprintf('PI Control Response Comparison (Kp=%.3g , Ki=%.3g)', Kp, Ki));
-title(sprintf('PD Control Response Comparison (Kp=%.3g , Ki=%.3g)', Kp, Kd));
+% title(sprintf('PD Control Response Comparison (Kp=%.3g , Ki=%.3g)', Kp, Kd));
 xlim([0, time(end)]);
 
 %% 3-2) 확대된 응답 (상승 구간)
