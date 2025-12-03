@@ -1,169 +1,245 @@
-%% estimate_model_gain_multi.m
-% P, PI, PD 세 실험 데이터를 동시에 사용해서 모터 파라미터 K, tau 역추정
+% estimate_model_gain.m
+% Estimate motor gain (K) and time constant (tau) from step-response data.
+% Procedure:
+%   1) find peak time (Tp) and percent overshoot (%OS) from the output
+%   2) use the controller transfer function (P control assumed)
+%   3) zeta = -ln(%OS/100) / sqrt(pi^2 + ln^2(%OS/100))
+%   4) omega_d = pi / Tp
+%   5) omega_n = omega_d / sqrt(1 - zeta^2)
+%   6) tau     = 1 / (2 * zeta * omega_n)
+%   7) K       = omega_n^2 * tau / Kp   (from tau*s^2 + s + K*Kp = 0)
 
 clear; close all; clc;
 
-%% 1. 기본 / 초기 파라미터
-K_nom   = 21.9;
-tau_nom = 0.15;
+%% Settings
+data_dir = find_pid_folder();
 
-p0 = [K_nom, tau_nom];   % 초기값 [K, tau]
+% Use one or two P-control datasets inside the 4*data/PID folder.
+% You can change this list to try other files in the same folder.
+files_to_use = {'p2.mat', 'p0.366.mat'};
 
-%% 2. 데이터 폴더 및 실험 케이스 정의
-base_dir = 'C:\Users\User\Desktop\Git\Motor-Pendulum-Control\4조 data\PID';
+% Optional: limit the analysis window [t_start, t_end] in seconds.
+analysis_window = [];  % leave empty to use full data range
 
-cases = struct([]);
+%% Run estimation
+estimates = struct([]);
 
-% (1) PI 제어기: p1i0.5.mat (Kp=1, Ki=0.5)
-cases(1).file = 'p1i0.5.mat';
-cases(1).type = 'PI';
-cases(1).name = 'PI (Kp=1, Ki=0.5)';
-cases(1).Kp   = 1;
-cases(1).Ki   = 0.5;
-cases(1).Kd   = 0;
+for k = 1:numel(files_to_use)
+    fname = files_to_use{k};
+    fpath = fullfile(data_dir, fname);
 
-% (2) P 제어기: p2.mat (Kp=2)
-cases(2).file = 'p2.mat';
-cases(2).type = 'P';
-cases(2).name = 'P (Kp=2)';
-cases(2).Kp   = 2;
-cases(2).Ki   = 0;
-cases(2).Kd   = 0;
-
-% (3) PD 제어기: p1d0.05.mat (Kp=1, Kd=0.05)
-cases(3).file = 'p1d0.05.mat';
-cases(3).type = 'PD';
-cases(3).name = 'PD (Kp=1, Kd=0.05)';
-cases(3).Kp   = 1;
-cases(3).Ki   = 0;
-cases(3).Kd   = 0.05;
-
-%% 3. 각 케이스별로 데이터 로드 + 사용할 구간(4~10초) 잘라서 저장
-t_start = 4.0;
-t_end   = 10.0;
-
-for i = 1:numel(cases)
-    c = cases(i);
-    data_path = fullfile(base_dir, c.file);
-    S = load(data_path);
-
-    time    = S.time(:);
-    encoder = S.encoder(:);
-
-    if isfield(S, 'signal_generated')
-        signal = S.signal_generated(:);
-    elseif isfield(S, 'signal')
-        signal = S.signal(:);
-    else
-        error('signal / signal_generated가 없습니다: %s', c.file);
+    if ~isfile(fpath)
+        warning('File not found: %s (skipping)', fpath);
+        continue;
     end
 
-    idx = (time >= t_start) & (time <= t_end);
+    raw = load(fpath);
+    [time, ref, out, Kp, Ki, Kd] = extract_signals(raw, fname);
 
-    cases(i).t_seg = time(idx);
-    cases(i).r_seg = signal(idx);
-    cases(i).y_seg = encoder(idx);
-end
+    if abs(Ki) > 1e-9 || abs(Kd) > 1e-9
+        warning('Skipping %s because Ki or Kd is non-zero. The requested formulas assume P control.', fname);
+        continue;
+    end
 
-%% 4. 비용 함수 정의 (P+PI+PD 전체 RMSE 합)
-cost_fun = @(p) multi_case_rmse(p, cases);
+    if ~isempty(analysis_window)
+        idx = (time >= analysis_window(1)) & (time <= analysis_window(2));
+        time = time(idx); ref = ref(idx); out = out(idx);
+    end
 
-options = optimset('Display','iter', 'TolX',1e-4, 'TolFun',1e-4);
-[p_hat, J_hat] = fminsearch(cost_fun, p0, options);
+    metrics = step_metrics(time, ref, out);
+    if ~metrics.valid
+        warning('Skipping %s (unable to compute Tp / OS).', fname);
+        continue;
+    end
 
-K_hat   = p_hat(1);
-tau_hat = p_hat(2);
+    % Parameter estimation (steps 3-7)
+    zeta     = metrics.zeta;
+    omega_d  = metrics.omega_d;
+    omega_n  = metrics.omega_n;
+    tau_hat  = metrics.tau;
+    K_hat    = (omega_n^2 * tau_hat) / Kp;
 
-fprintf('\n===== Multi-case identification result =====\n');
-fprintf('  K_hat   = %.3f  (initial %.3f)\n', K_hat, K_nom);
-fprintf('  tau_hat = %.4f  (initial %.4f)\n', tau_hat, tau_nom);
-fprintf('  Total cost (sum RMSE) = %.3f deg\n', J_hat);
+    fprintf('\n[%s]\n', fname);
+    fprintf('  Controller: Kp=%.4g, Ki=%.4g, Kd=%.4g\n', Kp, Ki, Kd);
+    fprintf('  Peak time (Tp)      : %.4f s\n', metrics.Tp);
+    fprintf('  Overshoot (%%OS)     : %.2f %%\n', metrics.OS);
+    fprintf('  zeta                : %.4f\n', zeta);
+    fprintf('  omega_d             : %.4f rad/s\n', omega_d);
+    fprintf('  omega_n             : %.4f rad/s\n', omega_n);
+    fprintf('  tau (estimated)     : %.5f s\n', tau_hat);
+    fprintf('  K   (estimated)     : %.5f\n', K_hat);
 
-%% 5. 각 케이스에 대해 새로운 파라미터로 시뮬레이션 + RMSE 비교
-for i = 1:numel(cases)
-    c = cases(i);
+    idx_est = numel(estimates) + 1;
+    estimates(idx_est) = struct( ... %#ok<SAGROW>
+        'file', fname, ...
+        'Tp', metrics.Tp, ...
+        'OS', metrics.OS, ...
+        'zeta', zeta, ...
+        'omega_d', omega_d, ...
+        'omega_n', omega_n, ...
+        'tau', tau_hat, ...
+        'K', K_hat, ...
+        'Kp', Kp, 'Ki', Ki, 'Kd', Kd, ...
+        'time', time, 'ref', ref, 'out', out); %#ok<AGROW>
 
-    t = c.t_seg;
-    r = c.r_seg;
-    y_exp = c.y_seg;
+    % Quick simulation to check fit against the measured reference/output.
+    s = tf('s');
+    G_hat = K_hat / (s * (tau_hat * s + 1));
+    C     = Kp;  % P controller only
+    T_hat = feedback(C * G_hat, 1);
+    out_hat = lsim(T_hat, ref, time);
 
-    y_nom = simulate_case_response([K_nom, tau_nom], t, r, c);
-    y_new = simulate_case_response([K_hat, tau_hat], t, r, c);
-
-    % steady-state 평균 제거 후 RMSE
-    y_exp_d = y_exp   - mean(y_exp(end-200:end));
-    y_nom_d = y_nom   - mean(y_nom(end-200:end));
-    y_new_d = y_new   - mean(y_new(end-200:end));
-
-    rmse_nom = sqrt(mean((y_nom_d - y_exp_d).^2));
-    rmse_new = sqrt(mean((y_new_d - y_exp_d).^2));
-
-    fprintf('\n--- %s (4~10 s 구간) ---\n', c.name);
-    fprintf('  RMSE_nom (K=%.1f, tau=%.3f) = %.3f deg\n', ...
-            K_nom, tau_nom, rmse_nom);
-    fprintf('  RMSE_new (K=%.3f, tau=%.3f) = %.3f deg\n', ...
-            K_hat, tau_hat, rmse_new);
-
-    % 그림 한 번 그려보기 (원하면 보고서에도 사용 가능)
-    figure('Name', ['Multi-ID ' c.name], 'Position', [100 100 900 500]);
-    plot(t, r,      'k--', 'LineWidth', 1.0); hold on;
-    plot(t, y_exp,  'b',   'LineWidth', 1.2);
-    plot(t, y_nom,  'r--', 'LineWidth', 1.2);
-    plot(t, y_new,  'm',   'LineWidth', 1.2);
+    figure('Name', sprintf('Estimated model: %s', fname), 'Color', 'w', ...
+           'Position', [100 100 950 500]);
+    plot(time, ref, 'k--', 'LineWidth', 1.0); hold on;
+    plot(time, out, 'b', 'LineWidth', 1.2);
+    plot(time, out_hat, 'r', 'LineWidth', 1.2);
     grid on;
     xlabel('Time [s]');
     ylabel('Angle [deg]');
-    title(sprintf('%s: nominal vs new motor parameters', c.name));
-    legend('Reference (Input)', ...
-           'Experiment (Encoder)', ...
-           sprintf('Simulation (K=%.1f, \\tau=%.3f)', K_nom, tau_nom), ...
-           sprintf('Simulation (K=%.3f, \\tau=%.3f)', K_hat, tau_hat), ...
-           'Location','Best');
+    legend('Reference', 'Experiment', 'Sim w/ estimated K, \\tau', 'Location', 'best');
+    title(sprintf('Step response fit (%s)', fname));
 end
 
-%% ===== 로컬 함수들 =====
-
-function J = multi_case_rmse(p, cases)
-    % 여러 실험 케이스(P, PI, PD)를 동시에 사용하는 비용 함수
-    J = 0;
-    for k = 1:numel(cases)
-        c = cases(k);
-        t = c.t_seg;
-        r = c.r_seg;
-        y_exp = c.y_seg;
-
-        y_model = simulate_case_response(p, t, r, c);
-
-        % steady-state 성분 제거해서 과도응답 형상 위주로 비교
-        tailN = min(200, floor(length(y_exp)/4));
-        y_exp_d   = y_exp   - mean(y_exp(end-tailN+1:end));
-        y_model_d = y_model - mean(y_model(end-tailN+1:end));
-
-        rmse_k = sqrt(mean((y_model_d - y_exp_d).^2));
-        J = J + rmse_k;   % 케이스별 RMSE를 단순 합 (원하면 가중치 곱해도 됨)
+if isempty(estimates)
+    warning('No estimates were produced. Check the chosen files or data content.');
+else
+    fprintf('\nSummary (P cases only)\n');
+    fprintf('File\t\tTp[s]\tOS[%%]\tzeta\tomega_n[rad/s]\ttau[s]\tK\n');
+    for k = 1:numel(estimates)
+        e = estimates(k);
+        fprintf('%s\t%.4f\t%.2f\t%.4f\t%.4f\t%.5f\t%.5f\n', ...
+            e.file, e.Tp, e.OS, e.zeta, e.omega_n, e.tau, e.K);
     end
 end
 
-function y = simulate_case_response(p, t, r, c)
-    % 주어진 모터 파라미터 p = [K, tau] 와
-    % 케이스 정보(c.type, c.Kp, c.Ki, c.Kd)를 사용해 닫힌루프 응답 계산
-    K   = p(1);
-    tau = p(2);
+%% Helper functions
+function data_dir = find_pid_folder()
+    % Look for a folder that matches the pattern 4*data/PID by walking up a few levels.
+    search_root = pwd;
+    for i = 1:4
+        candidates = dir(fullfile(search_root, '4*data'));
+        for c = candidates'
+            if ~c.isdir
+                continue;
+            end
+            maybe = fullfile(search_root, c.name, 'PID');
+            if isfolder(maybe)
+                data_dir = maybe;
+                return;
+            end
+        end
+        parent = fileparts(search_root);
+        if isempty(parent) || strcmp(parent, search_root)
+            break;
+        end
+        search_root = parent;
+    end
+    error('Could not locate the PID data folder. Update data_dir manually.');
+end
 
-    s = tf('s');
-    G = K / (s*(tau*s + 1));   % 모터 모델
+function [time, ref, out, Kp, Ki, Kd] = extract_signals(S, fname)
+    time = ensure_col(get_field(S, {'time', 'Time', 't'}, 'time', fname));
+    ref  = ensure_col(get_field(S, {'signal_generated', 'signal', 'Signal'}, 'reference', fname));
+    out  = ensure_col(get_field(S, {'encoder', 'Encoder', 'theta'}, 'encoder', fname));
 
-    switch c.type
-        case 'P'
-            C = c.Kp;
-        case 'PI'
-            C = c.Kp + c.Ki/s;
-        case 'PD'
-            C = c.Kp + c.Kd*s;
-        otherwise
-            error('Unknown controller type: %s', c.type);
+    Kp = mean(get_field(S, {'Kp_simout', 'Kp'}, 'Kp', fname));
+    Ki = mean(get_field(S, {'Ki_simout', 'Ki'}, 'Ki', fname));
+    Kd = mean(get_field(S, {'Kd_simout', 'Kd'}, 'Kd', fname));
+
+    n = min([numel(time), numel(ref), numel(out)]);
+    time = time(1:n); ref = ref(1:n); out = out(1:n);
+end
+
+function value = get_field(S, names, label, fname)
+    for i = 1:numel(names)
+        if isfield(S, names{i})
+            value = S.(names{i});
+            return;
+        end
+    end
+    error('Missing "%s" field in %s.', label, fname);
+end
+
+function v = ensure_col(x)
+    v = double(x(:));
+end
+
+function metrics = step_metrics(t, r, y)
+    metrics = struct('valid', false, 'Tp', NaN, 'OS', NaN, ...
+        'zeta', NaN, 'omega_d', NaN, 'omega_n', NaN, 'tau', NaN);
+
+    if numel(t) < 10 || any(diff(t) <= 0)
+        return;
     end
 
-    T_cl = feedback(C*G, 1);
-    y = lsim(T_cl, r, t);
+    % Find step edges in the reference (square-wave data exist; use first edge).
+    edges = find(abs(diff(r)) > 1e-6);
+    if isempty(edges)
+        return;
+    end
+
+    idx_start = edges(1) + 1;   % first sample after the step
+    if numel(edges) >= 2
+        idx_stop = edges(2) + 1; % up to the next edge
+    else
+        idx_stop = numel(t);     % or to the end if only one edge
+    end
+
+    seg_idx = idx_start:idx_stop;
+    if numel(seg_idx) < 10
+        return;
+    end
+
+    % Baseline just before the step.
+    pre_n = min(idx_start-1, max(10, round(0.05 * numel(t))));
+    pre_range = (idx_start-pre_n):(idx_start-1);
+    r0 = mean(r(pre_range));
+    y0 = mean(y(pre_range));
+
+    % Post-step segment (until next edge).
+    t_seg = t(seg_idx);
+    r_seg = r(seg_idx);
+    y_seg = y(seg_idx);
+
+    tail_n = max(10, round(0.1 * numel(r_seg)));
+    r1 = mean(r_seg(end-tail_n+1:end));
+    r_step = r1 - r0;
+    if abs(r_step) < 1e-6
+        return;
+    end
+
+    step_sign = sign(r_step);
+    if step_sign >= 0
+        [y_peak, idx_peak] = max(y_seg);
+    else
+        [y_peak, idx_peak] = min(y_seg);
+    end
+
+    Tp = t_seg(idx_peak) - t_seg(1); % time-to-peak from step instant
+
+    % Percent overshoot relative to commanded step magnitude.
+    y_peak_rel = y_peak - y0;
+    OS = 100 * abs(y_peak_rel - r_step) / abs(r_step);
+
+    if Tp <= 0 || OS <= 0
+        return;
+    end
+
+    zeta = -log(OS/100) / sqrt(pi^2 + log(OS/100)^2);
+    if zeta >= 1
+        return;  % overdamped -> no peak; formula invalid
+    end
+
+    omega_d = pi / Tp;
+    omega_n = omega_d / sqrt(1 - zeta^2);
+    tau     = 1 / (2 * zeta * omega_n);
+
+    metrics.valid   = isfinite(omega_n) && isfinite(tau);
+    metrics.Tp      = Tp;
+    metrics.OS      = OS;
+    metrics.zeta    = zeta;
+    metrics.omega_d = omega_d;
+    metrics.omega_n = omega_n;
+    metrics.tau     = tau;
 end
